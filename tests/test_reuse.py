@@ -240,3 +240,11 @@ class TestTransitions(TestCase):
         m_model.to('NEST%sC' % State.separator)
         m_model.go()
         self.assertTrue(m_model.prepared)
+
+    def test_reuse_start(self):
+        ms = Machine(states=["C", "D"], transitions={"trigger": "go", "source": "*", "dest": "D"}, initial="C")
+        m = Machine(states=["A", "B", {"name": "NEST", "children": ms}])
+        m.to('NEST%sC' % State.separator)
+        m.go()
+        m.to_NEST()
+        m.go()

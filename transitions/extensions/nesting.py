@@ -104,7 +104,7 @@ class NestedEvent(Event):
         tmp = self.machine.current_state
         while tmp.parent and tmp.name not in self.transitions:
             tmp = tmp.parent
-        if tmp.name not in self.transitions:
+        if tmp.name not in self.transitions and len(self.transitions['*']) == 0:
             msg = "%sCan't trigger event %s from state %s!" % (self.machine.id, self.name,
                                                                self.machine.current_state.name)
             if self.machine.current_state.ignore_invalid_triggers:
@@ -114,6 +114,10 @@ class NestedEvent(Event):
         event = EventData(self.machine.current_state, self, self.machine,
                           self.machine.model, args=args, kwargs=kwargs)
         for t in self.transitions[tmp.name]:
+            event.transition = t
+            if t.execute(event):
+                return True
+        for t in self.transitions['*']:
             event.transition = t
             if t.execute(event):
                 return True
@@ -189,7 +193,8 @@ class HierarchicalMachine(Machine):
                         trigger = '.'.join(path)
                     for transitions in event.transitions.values():
                         for transition in transitions:
-                            src = transition.source
+                            src = parent.name + NestedState.separator + transition.source\
+                                if not transition.source == '*' else '*'
                             dst = parent.name + NestedState.separator + transition.dest\
                                 if transition.dest not in remap else remap[transition.dest]
                             conditions = []
@@ -197,7 +202,7 @@ class HierarchicalMachine(Machine):
                             for c in transition.conditions:
                                 conditions.append(c.func) if c.target else unless.append(c.func)
                             self._buffered_transitions.append({'trigger': trigger,
-                                                               'source': parent.name + NestedState.separator + src,
+                                                               'source': src,
                                                                'dest': dst,
                                                                'conditions': conditions,
                                                                'unless': unless,
@@ -233,7 +238,7 @@ class HierarchicalMachine(Machine):
     def add_transition(self, trigger, source, dest, conditions=None,
                        unless=None, before=None, after=None, prepare=None, **kwargs):
         if isinstance(source, string_types):
-            source = [x.name for x in self.states.values()] if source == '*' else [source]
+            source = [source]
 
         # FunctionWrappers are only necessary if a custom separator is used
         if trigger not in self.events and NestedState.separator not in '_':

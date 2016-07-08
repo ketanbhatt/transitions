@@ -131,9 +131,10 @@ class Transition(object):
         Returns: boolean indicating whether or not the transition was
             successfully executed (True if successful, False if not).
         """
-        logger.info("%sInitiating transition from state %s to state %s...",
-                    event_data.machine.id, self.source, self.dest)
         machine = event_data.machine
+        source = event_data.state.name if self.source == '*' else self.source
+        logger.info("%sInitiating transition from state %s to state %s...",
+                    event_data.machine.id, source, self.dest)
 
         for func in self.prepare:
             machine._callback(getattr(event_data.model, func), event_data)
@@ -156,7 +157,7 @@ class Transition(object):
         return True
 
     def _change_state(self, event_data):
-        event_data.machine.get_state(self.source).exit(event_data)
+        event_data.machine.get_state(event_data.state.name).exit(event_data)
         event_data.machine.set_state(self.dest)
         event_data.update()
         event_data.machine.get_state(self.dest).enter(event_data)
@@ -211,6 +212,7 @@ class Event(object):
         self.name = name
         self.machine = machine
         self.transitions = defaultdict(list)
+        self.transitions['*'] = []
 
     def add_transition(self, transition):
         """ Add a transition to the list of potential transitions.
@@ -235,7 +237,7 @@ class Event(object):
             successfully executed (True if successful, False if not).
         """
         state_name = self.machine.current_state.name
-        if state_name not in self.transitions:
+        if state_name not in self.transitions and len(self.transitions['*']) == 0:
             msg = "%sCan't trigger event %s from state %s!" % (self.machine.id, self.name,
                                                                state_name)
             if self.machine.current_state.ignore_invalid_triggers:
@@ -245,10 +247,16 @@ class Event(object):
                 raise MachineError(msg)
         event = EventData(self.machine.current_state, self, self.machine,
                           self.machine.model, args=args, kwargs=kwargs)
+
         for t in self.transitions[state_name]:
             event.transition = t
             if t.execute(event):
                 return True
+        for t in self.transitions['*']:
+            event.transition = t
+            if t.execute(event):
+                return True
+
         return False
 
     def add_callback(self, trigger, func):
@@ -468,7 +476,7 @@ class Machine(object):
             setattr(self.model, trigger, self.events[trigger].trigger)
 
         if isinstance(source, string_types):
-            source = list(self.states.keys()) if source == '*' else [source]
+            source = [source]
 
         if self.before_state_change:
             before = listify(before) + listify(self.before_state_change)
